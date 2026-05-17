@@ -2,6 +2,8 @@ const { Document, AuditLog } = require('../models');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
 const crypto = require('crypto');
+const generateSealId = require('../utils/generateSealId');
+const generateQRCode = require('../utils/generateQRCode');
 
 /**
  * sealDocument
@@ -159,7 +161,86 @@ const verifyDocument = asyncHandler(async (req, res) => {
   });
 });
 
+/**
+ * issueDocument
+ * Member 2: Generate Seal ID, store document metadata, generate QR code.
+ */
+const issueDocument = asyncHandler(async (req, res) => {
+  console.log("Issue API hit");
+  console.log(req.body);
+
+  const { issuedTo, issuedBy, issueDate, documentType } = req.body;
+
+  // 1. Validate all fields
+  if (!issuedTo || !issuedBy || !issueDate || !req.file) {
+    throw new ApiError(400, 'Missing required fields or file for issuance');
+  }
+
+  // 2. Generate SHA-256 hash from file buffer
+  const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+
+  // 3. Generate unique Seal ID
+  const sealId = generateSealId();
+
+  // 4. Generate QR code using qrcode npm package
+  const qrUrl = `http://localhost:5173/verify/${sealId}`;
+  const qrCode = await generateQRCode(qrUrl);
+  
+  const fileName = req.file.originalname || 'Document';
+
+  // 4. Save document in MongoDB
+  const doc = await Document.create({
+    sealId,
+    hash,
+    fileName,
+    issuedTo,
+    issuedBy,
+    issueDate,
+    qrCode,
+    createdBy: req.user.id,
+    
+    // Existing required fields to satisfy schema validation
+    documentHash: hash,
+    hashAlgorithm: 'SHA-256',
+    documentType: documentType || 'Certificate'
+  });
+
+  console.log("Document saved");
+
+  res.status(201).json({
+    success: true,
+    sealId: doc.sealId,
+    qrCode: doc.qrCode,
+    metadata: {
+      sealId: doc.sealId,
+      issuedTo: doc.issuedTo,
+      issuedBy: doc.issuedBy,
+      issueDate: doc.issueDate,
+      fileName: doc.fileName,
+      createdAt: doc.createdAt
+    }
+  });
+});
+
+/**
+ * getHistory
+ * Retrieves recent document issuance history for the logged-in user.
+ */
+const getHistory = asyncHandler(async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 10;
+  const docs = await Document.find({ createdBy: req.user.id })
+                             .sort({ createdAt: -1 })
+                             .limit(limit);
+                             
+  res.status(200).json({
+    success: true,
+    data: docs
+  });
+});
+
 module.exports = {
   sealDocument,
-  verifyDocument
+  verifyDocument,
+  issueDocument,
+  getHistory
 };

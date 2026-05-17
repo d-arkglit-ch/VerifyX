@@ -372,7 +372,7 @@ const Dashboard = () => {
                 title="Seal a Document"
                 description="Upload a document to generate its cryptographic Seal ID and store the hash proof."
                 badge="Ready"
-                onClick={() => openChoice('seal')}
+                onClick={() => navigate('/issue-document')}
               />
               <ActionCard
                 icon={FileSearch}

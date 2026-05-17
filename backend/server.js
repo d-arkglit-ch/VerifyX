@@ -30,10 +30,15 @@ connectDB();
 // Helmet: Sets secure HTTP headers (XSS protection, no sniff, etc.)
 app.use(helmet());
 
-// CORS: Only allow requests from the frontend origin
+// CORS: Allow requests from the frontend origin, supporting multiple common Vite ports for dev
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || 'http://localhost:5173',
+    origin: [
+      process.env.CLIENT_URL,
+      'http://localhost:5173',
+      'http://localhost:5174',
+      'http://localhost:5175'
+    ].filter(Boolean),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     credentials: true,

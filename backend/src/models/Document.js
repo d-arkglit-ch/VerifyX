@@ -6,16 +6,27 @@ const documentSchema = new mongoose.Schema({
     index: true,
     default: ''
   },
-  documentHash: { 
-    type: String, 
-    required: true 
+  hash: {
+    type: String,
+    select: false
+  },
+  fileName: {
+    type: String,
+    default: 'Document'
+  },
+  qrCode: {
+    type: String
+  },
+  documentHash: {
+    type: String,
+    required: true
   },
   hashAlgorithm: {
     type: String,
     enum: ["SHA-256", "pHash"],
     required: true
   },
-  ocrText: { 
+  ocrText: {
     type: String,
     default: ''
   },
@@ -26,22 +37,22 @@ const documentSchema = new mongoose.Schema({
     issuer: { type: String, default: '' },
     registrationNumber: { type: String, default: '' }
   },
-  issuedTo: { 
-    type: String, 
-    required: true 
+  issuedTo: {
+    type: String,
+    required: true
   },
-  issuedBy: { 
-    type: String, 
-    required: true 
+  issuedBy: {
+    type: String,
+    required: true
   },
-  issueDate: { 
-    type: Date, 
-    default: Date.now 
+  issueDate: {
+    type: Date,
+    default: Date.now
   },
   documentType: {
     type: String,
     enum: [
-      "Certificate",
+      "Academic Degree",
       "Medical Report",
       "Offer Letter",
       "Legal Document",
@@ -63,8 +74,8 @@ const documentSchema = new mongoose.Schema({
     ref: "User",
     required: true
   }
-}, { 
-  timestamps: true 
+}, {
+  timestamps: true
 });
 
 module.exports = mongoose.model('Document', documentSchema);
