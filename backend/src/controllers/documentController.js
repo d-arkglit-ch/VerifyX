@@ -1,7 +1,6 @@
 const { Document, AuditLog } = require('../models');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
-const crypto = require('crypto');
 const generateSealId = require('../utils/generateSealId');
 const generateQRCode = require('../utils/generateQRCode');
 
@@ -163,62 +162,69 @@ const verifyDocument = asyncHandler(async (req, res) => {
 
 /**
  * issueDocument
- * Member 2: Generate Seal ID, store document metadata, generate QR code.
+ * Accepts frontend-processed verification proofs (hash, OCR, fields) and
+ * generates a Seal ID + QR code. Does NOT receive or process raw files.
  */
 const issueDocument = asyncHandler(async (req, res) => {
-  console.log("Issue API hit");
-  console.log(req.body);
+  const {
+    documentHash,
+    hashAlgorithm,
+    issuedTo,
+    issuedBy,
+    issueDate,
+    documentType,
+    ocrText,
+    fields
+  } = req.body;
 
-  const { issuedTo, issuedBy, issueDate, documentType } = req.body;
-
-  // 1. Validate all fields
-  if (!issuedTo || !issuedBy || !issueDate || !req.file) {
-    throw new ApiError(400, 'Missing required fields or file for issuance');
+  // 1. Validate required proof fields
+  if (!documentHash || !hashAlgorithm || !issuedTo || !issuedBy || !issueDate) {
+    throw new ApiError(400, 'Missing required fields: documentHash, hashAlgorithm, issuedTo, issuedBy, issueDate');
   }
 
-  // 2. Generate SHA-256 hash from file buffer
-  const hash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
-
-  // 3. Generate unique Seal ID
-  // Check if document already exists
-  const existingDocument = await Document.findOne({ hash });
+  // 2. Check for duplicate by semantic hash
+  const existingDocument = await Document.findOne({ documentHash });
 
   if (existingDocument) {
     return res.status(200).json({
       success: true,
       alreadyExists: true,
-      message: "Document already sealed",
+      message: 'Document already sealed with this hash',
       sealId: existingDocument.sealId,
-      qrCode: existingDocument.qrCode,
-      existing: true,
+      qrCode: existingDocument.qrCode
     });
   }
+
+  // 3. Generate unique Seal ID
   const sealId = await generateSealId();
 
-  // 4. Generate QR code using qrcode npm package
+  // 4. Generate QR code pointing to frontend verification page
   const qrUrl = `http://localhost:5173/verify/${sealId}`;
   const qrCode = await generateQRCode(qrUrl);
 
-  const fileName = req.file.originalname || 'Document';
-
-  // 4. Save document in MongoDB
+  // 5. Store verification proofs — NOT the raw file
   const doc = await Document.create({
     sealId,
-    hash,
-    fileName,
+    documentHash,
+    hashAlgorithm,
     issuedTo,
     issuedBy,
     issueDate,
+    documentType: documentType || 'Certificate',
+    ocrText: ocrText || '',
+    fields: fields || {},
     qrCode,
-    createdBy: req.user.id,
-
-    // Existing required fields to satisfy schema validation
-    documentHash: hash,
-    hashAlgorithm: 'SHA-256',
-    documentType: documentType || 'Certificate'
+    createdBy: req.user.id
   });
 
-  console.log("Document saved");
+  // 6. Audit log
+  await AuditLog.create({
+    action: 'ISSUE',
+    sealId: doc.sealId,
+    userId: req.user.id,
+    result: 'SUCCESS',
+    ipAddress: req.ip || req.headers['x-forwarded-for'] || ''
+  });
 
   res.status(201).json({
     success: true,
@@ -229,7 +235,8 @@ const issueDocument = asyncHandler(async (req, res) => {
       issuedTo: doc.issuedTo,
       issuedBy: doc.issuedBy,
       issueDate: doc.issueDate,
-      fileName: doc.fileName,
+      documentType: doc.documentType,
+      hashAlgorithm: doc.hashAlgorithm,
       createdAt: doc.createdAt
     }
   });

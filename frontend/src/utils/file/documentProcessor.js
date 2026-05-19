@@ -74,26 +74,27 @@ export const processDocument = async (file, onProgress = () => {}) => {
       documentHash = await generateSHA256(normalizedText);
     }
 
-    // OCR — run as supplementary for scanned PDFs (text may be empty)
+    // OCR — only run as fallback for scanned PDFs with no extractable text
+    // Tesseract.js cannot read raw PDF bytes — skip if text was already extracted
     onProgress(STAGES.OCR, 50);
-    try {
-      const ocrResult = await runOCR(file, (pct) => {
-        // Map OCR progress (0-100) into the 50-80 range of overall progress
-        onProgress(STAGES.OCR, 50 + Math.round(pct * 0.3));
-      });
-      ocrText = ocrResult.text;
-      ocrConfidence = ocrResult.confidence;
+    if (!normalizedText) {
+      try {
+        const ocrResult = await runOCR(file, (pct) => {
+          // Map OCR progress (0-100) into the 50-80 range of overall progress
+          onProgress(STAGES.OCR, 50 + Math.round(pct * 0.3));
+        });
+        ocrText = ocrResult.text;
+        ocrConfidence = ocrResult.confidence;
 
-      // If PDF text extraction was empty, use OCR text for hashing
-      if (!normalizedText && ocrText) {
+        // Use OCR text for hashing since pdfjs found nothing
         normalizedText = normalizeContent(ocrText);
         if (normalizedText) {
           documentHash = await generateSHA256(normalizedText);
         }
+      } catch {
+        // OCR failure is non-critical — log and continue
+        console.warn('OCR fallback failed — continuing with extracted text');
       }
-    } catch {
-      // OCR failure is non-critical for PDFs with extractable text
-      console.warn('OCR fallback failed — continuing with extracted text');
     }
 
   } else if (fileType === 'IMAGE') {

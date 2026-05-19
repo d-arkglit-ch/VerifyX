@@ -3,7 +3,7 @@ const Document = require('../models/Document');
 /**
  * generateSealId
  * Generates a unique Seal ID in the format:
- * VRX-XXXXXX
+ * VRX-XXXXXX or DOC-XXXXXX
  */
 
 const generateSealId = async () => {
@@ -26,7 +26,7 @@ const generateSealId = async () => {
       randomPart += characters[randomIndex];
     }
 
-    sealId = `VRX-${randomPart}`;
+    sealId = `DOC-${randomPart}`;
 
     // Check MongoDB for duplicate Seal ID
     const existingDocument = await Document.findOne({ sealId });

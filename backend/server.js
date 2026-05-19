@@ -8,6 +8,7 @@ const morgan = require('morgan');
 const connectDB = require('./src/config/db');
 const authRoutes = require('./src/routes/authRoutes');
 const documentRoutes = require('./src/routes/documentRoutes');
+const verificationRoutes = require('./src/routes/verificationRoutes');
 const errorHandler = require('./src/middlewares/errorHandler');
 
 // ─── Validate critical env vars at startup ─────────────────────────────────────
@@ -67,6 +68,7 @@ app.get('/api/health', (req, res) => {
 // ─── API Routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api', verificationRoutes);
 
 // ─── 404 Handler (unmatched routes) ───────────────────────────────────────────
 app.use((req, res) => {

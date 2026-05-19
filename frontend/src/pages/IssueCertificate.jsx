@@ -27,13 +27,19 @@ import {
   FileText,
   Clock,
   Activity,
-  ChevronLeft
+  ChevronLeft,
+  Image
 } from "lucide-react";
+import { processDocument } from '../utils/file/documentProcessor';
+import { processImageForVerification } from '../utils/imageVerificationProcessor';
 
 const IssueCertificate = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef(null);
+
+  // Document mode: 'pdf' | 'image'
+  const [docMode, setDocMode] = useState('pdf');
 
   // Form state
   const [file, setFile] = useState(null);
@@ -69,26 +75,35 @@ const IssueCertificate = () => {
   };
 
   const handleReset = () => {
-    // Reset state for new issuance
     setFile(null);
     setIssuedTo('');
     setIssueDate(new Date().toISOString().split('T')[0]);
     setDocumentType('Academic Degree');
     setSealData(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleModeSwitch = (mode) => {
+    if (sealData) return;
+    setDocMode(mode);
+    setFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleFileChange = (e) => {
-    if (sealData) return; // Locked
+    if (sealData) return;
     if (e.target.files && e.target.files[0]) {
       const f = e.target.files[0];
-      if (['application/pdf', 'image/jpeg', 'image/png'].includes(f.type)) {
+      const allowedTypes = docMode === 'pdf'
+        ? ['application/pdf']
+        : ['image/jpeg', 'image/png', 'image/jpg'];
+
+      if (allowedTypes.includes(f.type)) {
         setFile(f);
         setSealData(null);
       } else {
-        toaster.create({ title: 'Invalid File', description: 'Please upload a PDF, PNG, or JPG.', type: 'error' });
+        const hint = docMode === 'pdf' ? 'PDF' : 'JPG or PNG';
+        toaster.create({ title: 'Wrong File Type', description: `Please upload a ${hint} file for the selected mode.`, type: 'error' });
       }
     }
   };
@@ -103,12 +118,6 @@ const IssueCertificate = () => {
   };
 
   const handleSeal = async () => {
-    /* 
-     * INTERVIEW NOTE: Duplicate Issuance Prevention
-     * We block execution if the document is already sealed (`sealData` exists) or if an API call is currently in progress (`isIssuing`).
-     * This prevents duplicate network requests and ensures a single document cannot be sealed twice by impatient clicking,
-     * maintaining database integrity and a strict 1-to-1 relationship between an uploaded file and a seal.
-     */
     if (isIssuing || sealData) return;
 
     if (!file || !issuedTo || !issuedBy || !issueDate || !documentType) {
@@ -117,30 +126,44 @@ const IssueCertificate = () => {
     }
 
     setIsIssuing(true);
-    setSealData(null); // Clear previous state
+    setSealData(null);
 
     try {
-      const formData = new FormData();
-      formData.append('document', file);
-      formData.append('issuedTo', issuedTo);
-      formData.append('issuedBy', issuedBy);
-      formData.append('issueDate', issueDate);
-      formData.append('documentType', documentType);
+      toaster.create({ title: 'Processing...', description: 'Extracting document content in browser.', type: 'info' });
 
-      const res = await axios.post('http://localhost:5000/api/documents/issue', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-          Authorization: `Bearer ${localStorage.getItem('token')}`
+      let processed;
+      if (docMode === 'pdf') {
+        // PDF pipeline: semantic text → SHA-256
+        processed = await processDocument(file);
+      } else {
+        // Image pipeline: pHash + OCR
+        processed = await processImageForVerification(file);
+      }
+
+      // Build unified proof payload
+      const proofPayload = {
+        documentHash: docMode === 'pdf' ? processed.documentHash : (processed.pHash || processed.documentHash),
+        hashAlgorithm: docMode === 'pdf' ? 'SHA-256' : 'pHash',
+        issuedTo,
+        issuedBy,
+        issueDate,
+        documentType,
+        ocrText: processed.ocrText || '',
+        fields: processed.fields || {}
+      };
+
+      const res = await axios.post(
+        'http://localhost:5000/api/documents/issue',
+        proofPayload,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
         }
-      });
+      );
 
       setSealData(res.data);
-      /*
-       * INTERVIEW NOTE: Dynamic History Updates
-       * We re-fetch the history immediately upon success instead of forcing a full page reload.
-       * This leverages React's state management to seamlessly prepend the new document 
-       * to the UI's Recent History list, providing a highly responsive SPA experience.
-       */
       fetchHistory();
       toaster.create({ title: 'Success', description: 'Document sealed successfully.', type: 'success' });
     } catch (err) {
@@ -186,35 +209,144 @@ const IssueCertificate = () => {
                   <Heading size="md" color="white">Issue New Certificate</Heading>
                 </Flex>
 
+                {/* ── Mode Toggle ────────────────────────────────────────── */}
+                <Flex
+                  bg="rgba(0,0,0,0.3)"
+                  borderRadius="xl"
+                  p={1}
+                  mb={6}
+                  borderWidth={1}
+                  borderColor="whiteAlpha.100"
+                  gap={1}
+                >
+                  <Box
+                    flex={1}
+                    py={3}
+                    px={4}
+                    borderRadius="lg"
+                    cursor={sealData ? 'not-allowed' : 'pointer'}
+                    bg={docMode === 'pdf' ? 'rgba(96,165,250,0.15)' : 'transparent'}
+                    borderWidth={1}
+                    borderColor={docMode === 'pdf' ? 'blue.500' : 'transparent'}
+                    onClick={() => handleModeSwitch('pdf')}
+                    transition="all 0.2s"
+                    textAlign="center"
+                  >
+                    <Flex align="center" justify="center" gap={2}>
+                      <FileText size={16} color={docMode === 'pdf' ? '#60a5fa' : '#718096'} />
+                      <Text
+                        fontWeight="bold"
+                        fontSize="sm"
+                        color={docMode === 'pdf' ? 'blue.300' : 'whiteAlpha.500'}
+                      >
+                        PDF Document
+                      </Text>
+                    </Flex>
+                    <Text fontSize="xs" color={docMode === 'pdf' ? 'blue.400' : 'whiteAlpha.300'} mt={1}>
+                      SHA-256 · Semantic Hash
+                    </Text>
+                  </Box>
+
+                  <Box
+                    flex={1}
+                    py={3}
+                    px={4}
+                    borderRadius="lg"
+                    cursor={sealData ? 'not-allowed' : 'pointer'}
+                    bg={docMode === 'image' ? 'rgba(192,132,252,0.15)' : 'transparent'}
+                    borderWidth={1}
+                    borderColor={docMode === 'image' ? 'purple.500' : 'transparent'}
+                    onClick={() => handleModeSwitch('image')}
+                    transition="all 0.2s"
+                    textAlign="center"
+                  >
+                    <Flex align="center" justify="center" gap={2}>
+                      <Image size={16} color={docMode === 'image' ? '#c084fc' : '#718096'} />
+                      <Text
+                        fontWeight="bold"
+                        fontSize="sm"
+                        color={docMode === 'image' ? 'purple.300' : 'whiteAlpha.500'}
+                      >
+                        Scanned Image
+                      </Text>
+                    </Flex>
+                    <Text fontSize="xs" color={docMode === 'image' ? 'purple.400' : 'whiteAlpha.300'} mt={1}>
+                      pHash · Perceptual Hash
+                    </Text>
+                  </Box>
+                </Flex>
+
+                {/* ── Upload Drop Zone ──────────────────────────────────── */}
                 <Box
                   border="2px dashed"
-                  borderColor={file ? "green.500" : "whiteAlpha.200"}
+                  borderColor={
+                    file
+                      ? docMode === 'pdf' ? 'blue.500' : 'purple.500'
+                      : 'whiteAlpha.200'
+                  }
                   borderRadius="xl"
                   p={10}
                   textAlign="center"
-                  bg={file ? "rgba(74, 222, 128, 0.05)" : "rgba(0,0,0,0.2)"}
-                  cursor={sealData ? "not-allowed" : "pointer"}
+                  bg={
+                    file
+                      ? docMode === 'pdf' ? 'rgba(96,165,250,0.05)' : 'rgba(192,132,252,0.05)'
+                      : 'rgba(0,0,0,0.2)'
+                  }
+                  cursor={sealData ? 'not-allowed' : 'pointer'}
                   opacity={sealData ? 0.6 : 1}
                   onClick={() => !sealData && fileInputRef.current?.click()}
                   onDragOver={handleDragOver}
                   onDrop={handleDrop}
-                  _hover={{ borderColor: sealData ? "whiteAlpha.200" : "green.500" }}
+                  _hover={{ borderColor: sealData ? 'whiteAlpha.200' : docMode === 'pdf' ? 'blue.500' : 'purple.500' }}
                   transition="all 0.2s"
                 >
-                  <input type="file" ref={fileInputRef} onChange={handleFileChange} style={{ display: 'none' }} accept=".pdf,.png,.jpg,.jpeg" disabled={!!sealData} />
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    style={{ display: 'none' }}
+                    accept={docMode === 'pdf' ? '.pdf' : '.jpg,.jpeg,.png'}
+                    disabled={!!sealData}
+                  />
                   <Box display="flex" justifyContent="center" mb={4}>
-                    <UploadCloud size={48} color={file ? "#4ade80" : "#718096"} />
+                    {file
+                      ? (docMode === 'pdf'
+                          ? <FileText size={48} color="#60a5fa" />
+                          : <Image size={48} color="#c084fc" />)
+                      : <UploadCloud size={48} color="#718096" />
+                    }
                   </Box>
                   {file ? (
                     <VStack gap={2}>
-                      <Text fontWeight="bold" color="green.400">{file.name}</Text>
-                      <Badge bg="green.950" color="green.400" border="1px solid" borderColor="green.800">File Selected</Badge>
+                      <Text fontWeight="bold" color={docMode === 'pdf' ? 'blue.300' : 'purple.300'}>
+                        {file.name}
+                      </Text>
+                      <Badge
+                        colorPalette={docMode === 'pdf' ? 'blue' : 'purple'}
+                        variant="solid"
+                        px={3} py={1} borderRadius="full"
+                      >
+                        {docMode === 'pdf' ? 'PDF · SHA-256 + OCR' : 'IMAGE · pHash + OCR'}
+                      </Badge>
                     </VStack>
                   ) : (
                     <VStack gap={2}>
-                      <Heading size="sm" color="white">Upload Document</Heading>
-                      <Text fontSize="sm" color="whiteAlpha.500">Drag and drop your PDF or image here, or click to browse.</Text>
-                      <Button mt={4} bg="green.600" color="white" _hover={{ bg: "green.500" }}>Select File</Button>
+                      <Heading size="sm" color="white">
+                        {docMode === 'pdf' ? 'Upload PDF Document' : 'Upload Scanned Image'}
+                      </Heading>
+                      <Text fontSize="sm" color="whiteAlpha.500">
+                        {docMode === 'pdf'
+                          ? 'Drag and drop your PDF here, or click to browse.'
+                          : 'Drag and drop your JPG or PNG here, or click to browse.'}
+                      </Text>
+                      <Text fontSize="xs" color="whiteAlpha.400" mt={1}>
+                        {docMode === 'pdf' ? 'Accepts: .pdf' : 'Accepts: .jpg, .jpeg, .png'}
+                      </Text>
+                      <Button mt={4} bg={docMode === 'pdf' ? 'blue.600' : 'purple.600'} color="white"
+                        _hover={{ bg: docMode === 'pdf' ? 'blue.500' : 'purple.500' }}
+                      >
+                        Select File
+                      </Button>
                     </VStack>
                   )}
                 </Box>

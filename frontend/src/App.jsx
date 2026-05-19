@@ -7,6 +7,8 @@ import IssueCertificate from './pages/IssueCertificate';
 import History from './pages/History';
 import TestProcessing from './pages/TestProcessing';
 import TestImageVerification from './pages/TestImageVerification';
+import VerifyEntry from './pages/VerifyEntry';
+import VerifyDocument from './pages/VerifyDocument';
 import ProtectedRoute from './routes/ProtectedRoute';
 
 function App() {
@@ -16,6 +18,8 @@ function App() {
       <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
+      <Route path="/manual-verify" element={<VerifyEntry />} />
+      <Route path="/verify/:sealId" element={<VerifyDocument />} />
 
       {/* ── Protected Routes ──────────────────────────── */}
       <Route element={<ProtectedRoute />}>
