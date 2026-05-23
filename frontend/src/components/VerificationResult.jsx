@@ -128,6 +128,43 @@ const VerificationResult = ({ verificationData, onReset }) => {
           System: {message}
         </Text>
 
+        {/* Tampering Reasons */}
+        {(result === 'RED' || result === 'YELLOW') && verificationData.reasons && verificationData.reasons.length > 0 && (
+          <Box 
+            w="full" 
+            bg={result === 'RED' ? "rgba(245, 101, 101, 0.1)" : "rgba(236, 201, 75, 0.1)"} 
+            p={4} 
+            borderRadius="xl" 
+            borderWidth={1} 
+            borderColor={result === 'RED' ? "red.500" : "yellow.500"}
+          >
+            <Text 
+              fontSize="sm" 
+              fontWeight="bold" 
+              color={result === 'RED' ? "red.300" : "yellow.300"} 
+              mb={2} 
+              textAlign="left"
+            >
+              {result === 'RED' ? 'Tampering Details:' : 'Discrepancy Details:'}
+            </Text>
+            <VStack align="stretch" gap={2}>
+              {verificationData.reasons.map((reason, index) => (
+                <Text 
+                  key={index} 
+                  fontSize="sm" 
+                  color={result === 'RED' ? "red.200" : "yellow.200"} 
+                  textAlign="left" 
+                  display="flex" 
+                  alignItems="flex-start" 
+                  gap={2}
+                >
+                  <Text as="span" color={result === 'RED' ? "red.500" : "yellow.500"}>•</Text> {reason}
+                </Text>
+              ))}
+            </VStack>
+          </Box>
+        )}
+
         <Button
           mt={4}
           variant="outline"

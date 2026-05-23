@@ -48,16 +48,20 @@ const verifyDocument = (storedDoc, payload) => {
   });
 
   // 3. Verification State Engine
-  const { result, message } = determineVerificationState({
+  const { result, message, reasons } = determineVerificationState({
     isExactHashMatch,
     overallConfidence,
-    ocrSimilarity
+    ocrSimilarity,
+    hashAlgorithm: storedDoc.hashAlgorithm,
+    hashSimilarity,
+    pHashSimilarity
   });
 
   // 4. Final output format
   return {
     result,
     message,
+    reasons,
     confidence: {
       overall: overallConfidence,
       ocr: ocrSimilarity
